@@ -7,6 +7,7 @@ An [Await](https://await-app.com) widget that surfaces real-time Claude.ai usage
 
 - 5-hour rolling session, 7-day rolling weekly and more
 - Background updates with always fresh data
+- Manually triggering for immediate updates
 
 Each row shows percentage, time-to-reset, and a colored gauge: green below 70%,
 orange 70 to under 85, red 85 and above.
