@@ -41,7 +41,7 @@ To initialize the project, run the following commands ([`bun`](https://bun.sh) i
 
 ```sh
 git clone https://github.com/mogita/await-agent-usage
-cd await-fuka
+cd await-agent-usage
 bun install
 ```
 
