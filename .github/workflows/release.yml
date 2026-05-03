@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: Version bump (ignored when re-releasing)
+        required: true
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      rerelease_current:
+        description: Re-release current latest version (overwrites existing release; release notes are preserved)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rerelease:
+    if: ${{ inputs.rerelease_current }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve current version
+        id: version
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          if [ -z "$latest" ]; then
+            echo "::error::rerelease_current requested but no existing release tags found."
+            exit 1
+          fi
+          pkg_version=$(jq -r .version package.json)
+          if [ "$pkg_version" != "$latest" ]; then
+            echo "::error::package.json version ($pkg_version) does not match latest tag ($latest); fix the branch before re-releasing."
+            exit 1
+          fi
+          echo "Re-releasing $latest"
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Backup previous release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > /tmp/release-notes-backup.md
+          echo "Backed up $(wc -c < /tmp/release-notes-backup.md) bytes of release notes."
+
+      - name: Delete existing release and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin --delete "$TAG" 2>/dev/null || true
+
+      - name: Build
+        run: bun run build:prod
+
+      - name: Verify artifact
+        run: test -f build/index.tsx
+
+      - name: Configure git identity
+        env:
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          git config user.name "$ACTOR"
+          git config user.email "${ACTOR_ID}+${ACTOR}@users.noreply.github.com"
+
+      - name: Tag and push
+        env:
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes-backup.md \
+            build/index.tsx
+
+  prepare:
+    if: ${{ !inputs.rerelease_current }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Determine new version
+        id: version
+        env:
+          BUMP: ${{ inputs.version_type }}
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          base="${latest:-0.0.0}"
+          IFS='.' read -r major minor patch <<< "$base"
+          case "$BUMP" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+            *) echo "::error::Unknown version_type: $BUMP"; exit 1 ;;
+          esac
+          new_version="${major}.${minor}.${patch}"
+          echo "Bumping ${base} -> ${new_version} (${BUMP})"
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git identity
+        env:
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          git config user.name "$ACTOR"
+          git config user.email "${ACTOR_ID}+${ACTOR}@users.noreply.github.com"
+
+      - name: Create release branch and bump package.json
+        env:
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_branch="release/${TAG}"
+          git checkout -b "$release_branch"
+          jq --tab --arg v "$TAG" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          if git diff --quiet -- package.json; then
+            echo "::error::package.json already at $TAG; nothing to bump."
+            exit 1
+          fi
+          git add package.json
+          git commit -m "chore(release): $TAG"
+
+      - name: Validate build
+        run: bun run build
+
+      - name: Push release branch
+        env:
+          TAG: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git push --force origin "release/${TAG}"
+
+      - name: Open release PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          url=$(gh pr create \
+            --base "$BRANCH" \
+            --head "release/${TAG}" \
+            --title "chore(release): ${TAG}" \
+            --body "Release \`${TAG}\`. Merging this PR triggers \`release-publish.yml\` which tags the merge commit \`${TAG}\` and creates a GitHub release with the bundled \`build/index.tsx\`.")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            echo "Release PR: $url"
+            echo ""
+            echo "Merge this PR to publish \`${TAG}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
