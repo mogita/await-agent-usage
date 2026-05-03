@@ -1,5 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
+const minify = Bun.argv.includes('--minify')
+
 // Topological order: dependencies first, dependents last.
 const FILES = [
 	'src/config.ts',
@@ -84,37 +86,47 @@ const license = `/* License: MIT */`
 
 const source = `${awaitImport}\n\n${segments.join('\n\n')}\n`
 
-// Two-step build: write the concatenated source, then run esbuild on it to
-// minify. --jsx=preserve keeps the JSX tree intact (the iPhone runtime parses
-// JSX itself); component identifiers like Text/VStack stay capitalized so JSX
-// continues to treat them as components rather than HTML-style strings.
-const tmpPath = './build/_combined.tsx'
-await writeFile(tmpPath, source)
+// In dev (no flag): emit the concatenated source as-is. The iPhone runtime
+// has its own esbuild and accepts TS+JSX, so no transform is needed; keeping
+// types and comments makes the output readable in the editor.
+//
+// With --minify: write a temp file, run esbuild on it, replace the body with
+// minified output. --jsx=preserve keeps the JSX tree intact (component
+// identifiers like Text/VStack stay capitalized so JSX continues to treat
+// them as components rather than HTML-style strings).
+let body = source.trimEnd()
+if (minify) {
+	const tmpPath = './build/_combined.tsx'
+	await writeFile(tmpPath, source)
 
-const proc = Bun.spawn(
-	[
-		'bunx',
-		'esbuild',
-		tmpPath,
-		'--minify',
-		'--bundle=false',
-		'--jsx=preserve',
-		'--charset=utf8',
-		'--log-level=error',
-	],
-	{ stderr: 'pipe', stdout: 'pipe' },
-)
-const minified = (await new Response(proc.stdout).text()).trim()
-const stderr = await new Response(proc.stderr).text()
-const exitCode = await proc.exited
-if (exitCode !== 0) {
-	console.error(stderr)
-	console.error('Minify FAILED.')
-	process.exit(1)
+	const proc = Bun.spawn(
+		[
+			'bunx',
+			'esbuild',
+			tmpPath,
+			'--minify',
+			'--bundle=false',
+			'--jsx=preserve',
+			'--charset=utf8',
+			'--log-level=error',
+		],
+		{ stderr: 'pipe', stdout: 'pipe' },
+	)
+	const stdout = (await new Response(proc.stdout).text()).trim()
+	const stderr = await new Response(proc.stderr).text()
+	const exitCode = await proc.exited
+	if (exitCode !== 0) {
+		console.error(stderr)
+		console.error('Minify FAILED.')
+		process.exit(1)
+	}
+	await rm(tmpPath)
+	body = stdout
 }
 
-const output = `${header}\n${versionLine}\n${about}\n${author}\n${license}\n${minified}\n`
+const output = `${header}\n${versionLine}\n${about}\n${author}\n${license}\n${body}\n`
 await writeFile('./build/index.tsx', output)
-await rm(tmpPath)
 
-console.log(`Built build/index.tsx (${output.length} bytes, minified)`)
+console.log(
+	`Built build/index.tsx (${output.length} bytes${minify ? ', minified' : ''})`,
+)
