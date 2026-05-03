@@ -1,16 +1,17 @@
 import { type Entry, readEntry, refresh } from './state'
 
-// The Await runtime clamps `update` to a multi-minute floor (~15:04). With a
+// The Await runtime clamps refreshes to a multi-minute floor (~15:04). With a
 // single entry, the time-to-reset countdown only ticks when the system
 // refreshes us, which feels stuck. Pre-populating one entry per minute over
 // the floor lets the widget render fresh `formatRemaining` values from each
 // entry's `date` without any extra network calls.
 //
-// See demos/Stock and demos/Clock Analog in the await app author's repo: the
-// same pattern (pre-tick the window, then schedule one refresh at the end).
+// `update: new Date()` per the await SKILL: ask iOS to refresh as fast as it
+// allows. iOS may still wait the budget floor, but this lets it go sooner if
+// it has slack. The pre-populated entries cover the worst case so the
+// countdown never freezes if iOS sits on its budget.
 const ENTRY_INTERVAL_MS = 60_000
 const ENTRY_COUNT = 16
-const WINDOW_MS = ENTRY_INTERVAL_MS * ENTRY_COUNT
 
 export async function widgetTimeline(): Promise<Timeline<Entry>> {
 	await refresh()
@@ -36,6 +37,6 @@ export async function widgetTimeline(): Promise<Timeline<Entry>> {
 	}
 	return {
 		entries,
-		update: new Date(now + WINDOW_MS),
+		update: new Date(),
 	}
 }

@@ -66,10 +66,11 @@ test('widgetTimeline: emits 16 entries spaced one minute apart', async () => {
 		expect(curr - prev).toBe(MIN)
 	}
 
-	// `update` lands one minute after the last entry, i.e. 16 minutes from now.
-	const last = t.entries[t.entries.length - 1]?.date.getTime() ?? 0
+	// `update` is "ASAP" — a Date close to call time, so iOS can refresh as
+	// fast as its budget allows.
 	const update = (t.update as Date).getTime()
-	expect(update - last).toBe(MIN)
+	expect(update).toBeGreaterThanOrEqual(before)
+	expect(update).toBeLessThanOrEqual(after)
 })
 
 test('widgetTimeline: every entry carries the same parsed slot data', async () => {

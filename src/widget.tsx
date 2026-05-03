@@ -1,13 +1,15 @@
 import {
+	Button,
 	Color,
 	HStack,
+	Icon,
 	RoundedRectangle,
 	Spacer,
 	Text,
 	VStack,
 	ZStack,
 } from 'await'
-import { colorForPct, formatRemaining } from './format'
+import { colorForPct, formatNextUpdate, formatRemaining } from './format'
 import type { Slot } from './parsers'
 import type { Entry } from './state'
 
@@ -68,17 +70,35 @@ function row(
 	)
 }
 
-export function widget(entry: WidgetEntry<Entry>): NativeView {
-	const { date, size, rows, failureCount, status, setupMode } = entry
+export function widget(
+	entry: WidgetEntry<Entry> & { refreshIntent: IntentInfo },
+): NativeView {
+	const {
+		date,
+		size,
+		rows,
+		failureCount,
+		status,
+		setupMode,
+		nextScheduled,
+		refreshIntent,
+	} = entry
 	const nowMs = date.getTime()
 	const total = Math.max(80, size.width - 24)
 	const errorMode = failureCount > 0
 	const anyData = rows.some((r) => r.slot.hasData)
+	const nextStr = formatNextUpdate(nextScheduled, nowMs)
+	const footerText = nextStr ? `Next in ${nextStr}` : 'Refresh'
 
 	return (
 		<ZStack alignment='topLeading' maxSides>
 			<Color value='background' />
-			<VStack alignment='leading' spacing={8} padding={12}>
+			<VStack
+				alignment='leading'
+				spacing={6}
+				padding={12}
+				frame={{ maxWidth: 'max', maxHeight: 'max', alignment: 'topLeading' }}
+			>
 				<HStack maxWidth>
 					<Text
 						value='Claude Usage'
@@ -113,6 +133,26 @@ export function widget(entry: WidgetEntry<Entry>): NativeView {
 						foreground='secondary'
 						lineLimit={3}
 					/>
+				) : undefined}
+				<Spacer minLength={0} />
+				{!setupMode ? (
+					<Button intent={refreshIntent} buttonStyle='plain'>
+						<HStack maxWidth spacing={4}>
+							<Spacer />
+							<Text
+								value={footerText}
+								fontSize={9}
+								foreground='secondary'
+								fontDesign='rounded'
+								monospacedDigit
+							/>
+							<Icon
+								value='arrow.clockwise'
+								fontSize={9}
+								foreground='secondary'
+							/>
+						</HStack>
+					</Button>
 				) : undefined}
 			</VStack>
 		</ZStack>

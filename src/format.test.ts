@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { colorForPct, formatRemaining } from './format'
+import { colorForPct, formatNextUpdate, formatRemaining } from './format'
 
 // colorForPct — boundaries from the spec: green <70, orange 70..<85, red >=85.
 
@@ -76,4 +76,35 @@ test('formatRemaining: single day rolls over correctly', () => {
 	expect(formatRemaining(NOW + 1 * DAY + 1 * HOUR + 1 * MIN, NOW)).toBe(
 		'1d 1h 1m',
 	)
+})
+
+// formatNextUpdate — "Next in Xm" footer countdown.
+
+test('formatNextUpdate: 0 returns empty (no schedule yet)', () => {
+	expect(formatNextUpdate(0, NOW)).toBe('')
+})
+
+test('formatNextUpdate: scheduled in the past returns "soon"', () => {
+	expect(formatNextUpdate(NOW - 1, NOW)).toBe('soon')
+	expect(formatNextUpdate(NOW, NOW)).toBe('soon')
+})
+
+test('formatNextUpdate: under an hour renders minutes', () => {
+	expect(formatNextUpdate(NOW + 1 * MIN, NOW)).toBe('1m')
+	expect(formatNextUpdate(NOW + 14 * MIN, NOW)).toBe('14m')
+	expect(formatNextUpdate(NOW + 59 * MIN, NOW)).toBe('59m')
+})
+
+test('formatNextUpdate: rounds the residual second up to the next minute', () => {
+	// 5m 30s -> "6m" so the countdown reaches 1m before falling to "soon".
+	expect(formatNextUpdate(NOW + 5 * MIN + 30_000, NOW)).toBe('6m')
+})
+
+test('formatNextUpdate: exact hour drops the minutes segment', () => {
+	expect(formatNextUpdate(NOW + 60 * MIN, NOW)).toBe('1h')
+	expect(formatNextUpdate(NOW + 2 * HOUR, NOW)).toBe('2h')
+})
+
+test('formatNextUpdate: hours and minutes', () => {
+	expect(formatNextUpdate(NOW + 90 * MIN, NOW)).toBe('1h 30m')
 })

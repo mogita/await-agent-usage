@@ -1,11 +1,19 @@
 import { fetchOrgId, fetchUsage } from './api'
 import { parseUsage, type Row } from './parsers'
 
+// Used to estimate when iOS will next call widgetTimeline. WidgetKit's floor
+// is ~15:04, so this is the earliest a successful auto-refresh can happen.
+const REFRESH_FLOOR_MS = 15 * 60 * 1000
+
 export type Entry = {
 	rows: Row[]
 	failureCount: number
 	status: string
 	setupMode: boolean
+	lastUpdated: number
+	// Estimated unix-ms timestamp of the next refresh. 0 if we have no
+	// reference yet (no successful fetch and not in backoff).
+	nextScheduled: number
 }
 
 function ensureSchema(): void {
@@ -21,6 +29,7 @@ function recordSuccess(): void {
 	AwaitStore.set('failureCount', 0)
 	AwaitStore.set('nextRetry', 0)
 	AwaitStore.set('status', 'ok')
+	AwaitStore.set('lastUpdated', Date.now())
 }
 
 function recordFailure(msg: string): void {
@@ -60,13 +69,35 @@ export async function refresh(): Promise<void> {
 	}
 }
 
+// User-tap intent. Clears any active backoff window so the next
+// widgetTimeline call (which iOS schedules immediately after an intent runs)
+// fetches fresh data instead of bailing on the backoff guard. Kept sync to
+// match the await intent type contract.
+export function manualRefresh(): void {
+	AwaitStore.set('nextRetry', 0)
+}
+
 export function readEntry(): Entry {
 	const sessionKey = AwaitStore.string('sessionKey', '').trim()
 	const raw = AwaitStore.string('lastResponse', '')
+	const lastUpdated = AwaitStore.num('lastUpdated', 0)
+	const nextRetry = AwaitStore.num('nextRetry', 0)
+
+	// Where the next refresh is expected: a backoff window if one is set,
+	// otherwise iOS's WidgetKit floor on top of the last successful fetch.
+	let nextScheduled = 0
+	if (nextRetry > 0) {
+		nextScheduled = nextRetry
+	} else if (lastUpdated > 0) {
+		nextScheduled = lastUpdated + REFRESH_FLOOR_MS
+	}
+
 	return {
 		rows: parseUsage(raw).rows,
 		failureCount: AwaitStore.num('failureCount', 0),
 		status: AwaitStore.string('status', ''),
 		setupMode: !sessionKey,
+		lastUpdated,
+		nextScheduled,
 	}
 }

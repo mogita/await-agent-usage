@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { readEntry, refresh } from './state'
+import { manualRefresh, readEntry, refresh } from './state'
 
 // AwaitStore + AwaitNetwork are declared as globals by the runtime types but
 // don't exist outside the device. Tests stub them with in-memory fakes and
@@ -131,6 +131,31 @@ test('refresh: success resets failureCount and nextRetry', async () => {
 	expect(store.get('status')).toBe('ok')
 })
 
+test('refresh: success stamps lastUpdated with the current time', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	responses.push({ code: 200, data: '{}' })
+
+	const before = Date.now()
+	await refresh()
+	const after = Date.now()
+
+	const lastUpdated = store.get('lastUpdated') as number
+	expect(lastUpdated).toBeGreaterThanOrEqual(before)
+	expect(lastUpdated).toBeLessThanOrEqual(after)
+})
+
+test('refresh: failure does NOT stamp lastUpdated (preserves prior value)', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	store.set('lastUpdated', 1234567890)
+	responses.push({ code: 500, data: 'boom' })
+
+	await refresh()
+
+	expect(store.get('lastUpdated')).toBe(1234567890)
+})
+
 // --- failure path ---
 
 test('refresh: 401 on usage clears orgId and increments failureCount', async () => {
@@ -219,4 +244,48 @@ test('readEntry: empty cached response yields no rows', () => {
 	store.set('sessionKey', 'sk-ant-x')
 	const e = readEntry()
 	expect(e.rows).toEqual([])
+})
+
+// --- nextScheduled ---
+
+test('readEntry: nextScheduled is 0 when never refreshed and no backoff', () => {
+	store.set('sessionKey', 'sk-ant-x')
+	expect(readEntry().nextScheduled).toBe(0)
+})
+
+test('readEntry: nextScheduled = lastUpdated + 15min after a successful fetch', () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('lastUpdated', 1_700_000_000_000)
+	expect(readEntry().nextScheduled).toBe(1_700_000_000_000 + 15 * 60_000)
+})
+
+test('readEntry: nextScheduled = nextRetry while in backoff (overrides lastUpdated)', () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('lastUpdated', 1_700_000_000_000)
+	store.set('nextRetry', 1_700_000_000_000 + 30 * 60_000)
+	expect(readEntry().nextScheduled).toBe(1_700_000_000_000 + 30 * 60_000)
+})
+
+// --- manualRefresh ---
+
+test('manualRefresh: clears nextRetry so the next fetch is not gated', () => {
+	store.set('nextRetry', Date.now() + 5 * 60_000)
+	manualRefresh()
+	expect(store.get('nextRetry')).toBe(0)
+})
+
+test('manualRefresh: followed by refresh() actually fetches', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	// Pretend we're deep into a backoff window.
+	store.set('nextRetry', Date.now() + 30 * 60_000)
+	store.set('failureCount', 5)
+
+	manualRefresh()
+	responses.push({ code: 200, data: '{"five_hour":{"utilization":7}}' })
+	await refresh()
+
+	expect(requestLog.length).toBe(1)
+	expect(store.get('lastResponse')).toContain('utilization')
+	expect(store.get('failureCount')).toBe(0)
 })
