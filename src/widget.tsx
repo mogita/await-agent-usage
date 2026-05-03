@@ -6,10 +6,11 @@ import {
 	RoundedRectangle,
 	Spacer,
 	Text,
+	Time,
 	VStack,
 	ZStack,
 } from 'await'
-import { colorForPct, formatNextUpdate, formatRemaining } from './format'
+import { colorForPct, formatRemaining } from './format'
 import type { Slot } from './parsers'
 import type { Entry } from './state'
 
@@ -73,22 +74,12 @@ function row(
 export function widget(
 	entry: WidgetEntry<Entry> & { refreshIntent: IntentInfo },
 ): NativeView {
-	const {
-		date,
-		size,
-		rows,
-		failureCount,
-		status,
-		setupMode,
-		nextScheduled,
-		refreshIntent,
-	} = entry
+	const { date, size, rows, failureCount, status, setupMode, refreshIntent } =
+		entry
 	const nowMs = date.getTime()
 	const total = Math.max(80, size.width - 24)
 	const errorMode = failureCount > 0
 	const anyData = rows.some((r) => r.slot.hasData)
-	const nextStr = formatNextUpdate(nextScheduled, nowMs)
-	const footerText = nextStr ? `Next in ${nextStr}` : 'Refresh'
 
 	return (
 		<ZStack alignment='topLeading' maxSides>
@@ -139,8 +130,12 @@ export function widget(
 					<Button intent={refreshIntent} buttonStyle='plain'>
 						<HStack maxWidth spacing={4}>
 							<Spacer />
-							<Text
-								value={footerText}
+							{/* Live ticking — iOS drives this without us. Resets to 0
+							    whenever a fresh entry lands, so it's a direct readout
+							    of how often iOS actually calls widgetTimeline. */}
+							<Time
+								date={date}
+								style='timer'
 								fontSize={9}
 								foreground='secondary'
 								fontDesign='rounded'
