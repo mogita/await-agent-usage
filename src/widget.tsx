@@ -130,17 +130,20 @@ export function widget(
 					<Button intent={refreshIntent} buttonStyle='plain'>
 						<HStack maxWidth spacing={4}>
 							<Spacer />
-							{/* Live ticking — iOS drives this without us. Resets to 0
-							    whenever a fresh entry lands, so it's a direct readout
-							    of how often iOS actually calls widgetTimeline. */}
-							<Time
-								date={date}
-								style='timer'
+							{/* Outer Text holds the styling; <Time style='timer'/> ticks
+							    live, driven by iOS. The inner Text leafs around it
+							    inherit the outer style and concatenate inline, the
+							    same composition pattern used by demos/Clock Text. */}
+							<Text
 								fontSize={9}
 								foreground='secondary'
 								fontDesign='rounded'
 								monospacedDigit
-							/>
+							>
+								<Text value='Last update ' />
+								<Time date={date} style='timer' />
+								<Text value=' ago' />
+							</Text>
 							<Icon
 								value='arrow.clockwise'
 								fontSize={9}
