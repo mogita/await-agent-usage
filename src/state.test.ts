@@ -246,39 +246,23 @@ test('readEntry: empty cached response yields no rows', () => {
 	expect(e.rows).toEqual([])
 })
 
-// --- nextScheduled ---
-
-test('readEntry: nextScheduled is 0 when never refreshed and no backoff', () => {
-	store.set('sessionKey', 'sk-ant-x')
-	expect(readEntry().nextScheduled).toBe(0)
-})
-
-test('readEntry: nextScheduled = lastUpdated + 15min after a successful fetch', () => {
-	store.set('sessionKey', 'sk-ant-x')
-	store.set('lastUpdated', 1_700_000_000_000)
-	expect(readEntry().nextScheduled).toBe(1_700_000_000_000 + 15 * 60_000)
-})
-
-test('readEntry: nextScheduled = nextRetry while in backoff (overrides lastUpdated)', () => {
-	store.set('sessionKey', 'sk-ant-x')
-	store.set('lastUpdated', 1_700_000_000_000)
-	store.set('nextRetry', 1_700_000_000_000 + 30 * 60_000)
-	expect(readEntry().nextScheduled).toBe(1_700_000_000_000 + 30 * 60_000)
-})
-
 // --- manualRefresh ---
 
-test('manualRefresh: clears nextRetry so the next fetch is not gated', () => {
+test('manualRefresh: clears both nextRetry and lastUpdated', () => {
 	store.set('nextRetry', Date.now() + 5 * 60_000)
+	store.set('lastUpdated', Date.now() - 30_000)
 	manualRefresh()
 	expect(store.get('nextRetry')).toBe(0)
+	expect(store.get('lastUpdated')).toBe(0)
 })
 
 test('manualRefresh: followed by refresh() actually fetches', async () => {
 	store.set('sessionKey', 'sk-ant-x')
 	store.set('orgId', 'org-cached')
-	// Pretend we're deep into a backoff window.
+	// Pretend we're deep into a backoff window AND were recently updated
+	// (so the per-call throttle in widgetTimeline would otherwise skip).
 	store.set('nextRetry', Date.now() + 30 * 60_000)
+	store.set('lastUpdated', Date.now())
 	store.set('failureCount', 5)
 
 	manualRefresh()

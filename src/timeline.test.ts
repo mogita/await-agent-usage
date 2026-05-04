@@ -4,10 +4,12 @@ import { widgetTimeline } from './timeline'
 let store: Map<string, unknown>
 type MockResponse = { code: number; data: string }
 let responses: MockResponse[]
+let requestCount: number
 
 beforeEach(() => {
 	store = new Map()
 	responses = []
+	requestCount = 0
 
 	const fakeStore = {
 		get: <T>(k: string): T | undefined => store.get(k) as T | undefined,
@@ -29,6 +31,7 @@ beforeEach(() => {
 
 	const fakeNetwork = {
 		request: async () => {
+			requestCount++
 			const res = responses.shift()
 			if (!res) throw new Error('no mock response queued')
 			return res
@@ -41,39 +44,98 @@ beforeEach(() => {
 	;(globalThis as any).AwaitNetwork = fakeNetwork
 })
 
-const MIN = 60_000
-
-test('widgetTimeline: emits 16 entries spaced one minute apart', async () => {
+test('widgetTimeline: emits exactly one entry', async () => {
 	store.set('sessionKey', 'sk-ant-x')
 	store.set('orgId', 'org-cached')
 	responses.push({ code: 200, data: '{"five_hour":{"utilization":50}}' })
+
+	const t = await widgetTimeline()
+	expect(t.entries.length).toBe(1)
+})
+
+test('widgetTimeline: entry.date is ~now (so the live <Time/> timer starts at 0)', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	responses.push({ code: 200, data: '{}' })
 
 	const before = Date.now()
 	const t = await widgetTimeline()
 	const after = Date.now()
 
-	expect(t.entries.length).toBe(16)
+	const entryDate = t.entries[0]?.date.getTime() ?? 0
+	expect(entryDate).toBeGreaterThanOrEqual(before)
+	expect(entryDate).toBeLessThanOrEqual(after)
+})
 
-	// First entry is ~now (within the wall-clock drift of awaiting refresh).
-	const first = t.entries[0]?.date.getTime() ?? 0
-	expect(first).toBeGreaterThanOrEqual(before)
-	expect(first).toBeLessThanOrEqual(after)
+test('widgetTimeline: update is "ASAP" — close to call time', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	responses.push({ code: 200, data: '{}' })
 
-	// Subsequent entries advance by exactly one minute.
-	for (let i = 1; i < t.entries.length; i++) {
-		const prev = t.entries[i - 1]?.date.getTime() ?? 0
-		const curr = t.entries[i]?.date.getTime() ?? 0
-		expect(curr - prev).toBe(MIN)
-	}
+	const before = Date.now()
+	const t = await widgetTimeline()
+	const after = Date.now()
 
-	// `update` is "ASAP" — a Date close to call time, so iOS can refresh as
-	// fast as its budget allows.
 	const update = (t.update as Date).getTime()
 	expect(update).toBeGreaterThanOrEqual(before)
 	expect(update).toBeLessThanOrEqual(after)
 })
 
-test('widgetTimeline: every entry carries the same parsed slot data', async () => {
+test('widgetTimeline: skips network when last fetch is within throttle window', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	store.set('lastUpdated', Date.now() - 30_000) // 30s ago, well inside 60s
+
+	await widgetTimeline()
+
+	expect(requestCount).toBe(0)
+})
+
+test('widgetTimeline: fetches when last update is older than throttle window', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	store.set('lastUpdated', Date.now() - 90_000) // 90s ago, outside 60s
+	responses.push({ code: 200, data: '{}' })
+
+	await widgetTimeline()
+
+	expect(requestCount).toBe(1)
+})
+
+test('widgetTimeline: fetches on first run (lastUpdated=0)', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	responses.push({ code: 200, data: '{}' })
+
+	await widgetTimeline()
+
+	expect(requestCount).toBe(1)
+})
+
+test('widgetTimeline: still emits one entry in setup mode', async () => {
+	const t = await widgetTimeline()
+
+	expect(t.entries.length).toBe(1)
+	const e = t.entries[0]
+	expect(e?.setupMode).toBe(true)
+	expect(e?.rows).toEqual([])
+})
+
+test('widgetTimeline: in backoff window, defers update to nextRetry', async () => {
+	store.set('sessionKey', 'sk-ant-x')
+	store.set('orgId', 'org-cached')
+	store.set('lastUpdated', Date.now() - 30_000) // recent — throttle skips fetch
+	const retryAt = Date.now() + 5 * 60_000
+	store.set('nextRetry', retryAt)
+	store.set('failureCount', 3)
+
+	const t = await widgetTimeline()
+
+	expect(t.entries.length).toBe(1)
+	expect((t.update as Date).getTime()).toBe(retryAt)
+})
+
+test('widgetTimeline: parsed slot data flows through to the entry', async () => {
 	store.set('sessionKey', 'sk-ant-x')
 	store.set('orgId', 'org-cached')
 	responses.push({
@@ -85,33 +147,7 @@ test('widgetTimeline: every entry carries the same parsed slot data', async () =
 
 	const t = await widgetTimeline()
 
-	for (const e of t.entries) {
-		expect(e.rows[0]?.slot.pct).toBe(42)
-		expect(e.setupMode).toBe(false)
-	}
-})
-
-test('widgetTimeline: in setup mode, the per-minute entries still render', async () => {
-	// No sessionKey -> refresh() short-circuits, but the timeline still emits
-	// entries so the widget can show its setup state at every render slot.
-	const t = await widgetTimeline()
-
-	expect(t.entries.length).toBe(16)
-	for (const e of t.entries) {
-		expect(e.setupMode).toBe(true)
-		expect(e.rows).toEqual([])
-	}
-})
-
-test('widgetTimeline: in backoff window, emits a single entry and defers update', async () => {
-	store.set('sessionKey', 'sk-ant-x')
-	store.set('orgId', 'org-cached')
-	const retryAt = Date.now() + 5 * MIN
-	store.set('nextRetry', retryAt)
-	store.set('failureCount', 3)
-
-	const t = await widgetTimeline()
-
-	expect(t.entries.length).toBe(1)
-	expect((t.update as Date).getTime()).toBe(retryAt)
+	const e = t.entries[0]
+	expect(e?.rows[0]?.slot.pct).toBe(42)
+	expect(e?.setupMode).toBe(false)
 })
