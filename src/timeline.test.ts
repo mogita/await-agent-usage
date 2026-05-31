@@ -67,18 +67,14 @@ test('widgetTimeline: entry.date is ~now (so the live <Time/> timer starts at 0)
 	expect(entryDate).toBeLessThanOrEqual(after)
 })
 
-test('widgetTimeline: update is "ASAP" — close to call time', async () => {
+test('widgetTimeline: update is "rapid"', async () => {
 	store.set('sessionKey', 'sk-ant-x')
 	store.set('orgId', 'org-cached')
 	responses.push({ code: 200, data: '{}' })
 
-	const before = Date.now()
 	const t = await widgetTimeline()
-	const after = Date.now()
 
-	const update = (t.update as Date).getTime()
-	expect(update).toBeGreaterThanOrEqual(before)
-	expect(update).toBeLessThanOrEqual(after)
+	expect(t.update).toBe('rapid')
 })
 
 test('widgetTimeline: skips network when last fetch is within throttle window', async () => {
@@ -121,18 +117,17 @@ test('widgetTimeline: still emits one entry in setup mode', async () => {
 	expect(e?.rows).toEqual([])
 })
 
-test('widgetTimeline: in backoff window, defers update to nextRetry', async () => {
+test('widgetTimeline: keeps "rapid" update even in backoff window', async () => {
 	store.set('sessionKey', 'sk-ant-x')
 	store.set('orgId', 'org-cached')
 	store.set('lastUpdated', Date.now() - 30_000) // recent — throttle skips fetch
-	const retryAt = Date.now() + 5 * 60_000
-	store.set('nextRetry', retryAt)
+	store.set('nextRetry', Date.now() + 5 * 60_000)
 	store.set('failureCount', 3)
 
 	const t = await widgetTimeline()
 
 	expect(t.entries.length).toBe(1)
-	expect((t.update as Date).getTime()).toBe(retryAt)
+	expect(t.update).toBe('rapid')
 })
 
 test('widgetTimeline: parsed slot data flows through to the entry', async () => {

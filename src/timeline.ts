@@ -22,11 +22,9 @@ export async function widgetTimeline(): Promise<Timeline<Entry>> {
 
 	const data = readEntry()
 	const now = Date.now()
-	const nextRetry = AwaitStore.num('nextRetry', 0)
-	const update = nextRetry > now ? new Date(nextRetry) : new Date()
 
 	return {
 		entries: [{ date: new Date(now), ...data }],
-		update,
+		update: 'rapid',
 	}
 }

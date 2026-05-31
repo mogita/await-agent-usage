@@ -2,10 +2,19 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "jsxImportSource": "runtime",
-    "types": ["bun"],
+    "types": [
+      "bun",
+      "@await-widget/runtime"
+    ],
     "paths": {
-      "*": ["./runtime/*", "./*"]
+      "*": [
+        "./runtime/*",
+        "./*"
+      ]
     }
   },
-  "exclude": ["build", "node_modules"]
+  "exclude": [
+    "build",
+    "node_modules"
+  ]
 }

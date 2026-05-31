@@ -5,7 +5,7 @@
     "": {
       "name": "await-agent-usage",
       "devDependencies": {
-        "@await-widget/runtime": "^0.0.4",
+        "@await-widget/runtime": "^0.0.14",
         "@biomejs/biome": "^2.4.13",
         "@types/bun": "^1.3.13",
         "simple-git-hooks": "^2.13.1",
@@ -14,7 +14,7 @@
     },
   },
   "packages": {
-    "@await-widget/runtime": ["@await-widget/runtime@0.0.4", "", {}, "sha512-CmzWOFkAZF/yYzKqgVl9xsDOKXGlGBUtKxRk8Lz2IhbXbhxwThnWB9T9K6J0l0lyXKI0zC0L2cvSTmkVuPs8/g=="],
+    "@await-widget/runtime": ["@await-widget/runtime@0.0.14", "", {}, "sha512-2wcvIjHXfz5ScaPiQesm6t95RMm5jsf3+vGHbfPcgevOk2bLpP7n+2Ke5hxiS78iCVlmAfTl9jcX4g+KA2d7CA=="],
 
     "@biomejs/biome": ["@biomejs/biome@2.4.14", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.14", "@biomejs/cli-darwin-x64": "2.4.14", "@biomejs/cli-linux-arm64": "2.4.14", "@biomejs/cli-linux-arm64-musl": "2.4.14", "@biomejs/cli-linux-x64": "2.4.14", "@biomejs/cli-linux-x64-musl": "2.4.14", "@biomejs/cli-win32-arm64": "2.4.14", "@biomejs/cli-win32-x64": "2.4.14" }, "bin": { "biome": "bin/biome" } }, "sha512-TmAvxOEgrpLypzVGJ8FulIZnlyA9TxrO1hyqYrCz9r+bwma9xXxuLA5IuYnj55XQneFx460KjRbx6SWGLkg3bQ=="],
 
