@@ -24,7 +24,6 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 jobs:
   rerelease:
@@ -216,15 +215,3 @@ jobs:
             echo ""
             echo "Merge this PR to publish \`${TAG}\`."
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Trigger required CI checks on the release branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          # GITHUB_TOKEN cannot trigger push/pull_request workflows, but workflow_dispatch is an
-          # allowed exception. Dispatching ci.yml on the release branch produces the lint/test
-          # check runs on the PR head SHA, satisfying the branch ruleset's required status checks.
-          gh workflow run ci.yml --ref "release/${TAG}"
-          echo "Dispatched CI for release/${TAG}." >> "$GITHUB_STEP_SUMMARY"
