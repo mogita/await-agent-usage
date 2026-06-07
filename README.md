@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="screen.jpg?raw=true" width="390" height="300" />
+  <img src="screen.jpg?raw=true" width="390" height="329" />
   <h3 align="center">Agent Usage</h3>
 </p>
 
